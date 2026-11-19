@@ -1,0 +1,153 @@
+---
+title: "Demo 3: The apply Family of Functions"
+author: "Your Name"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: flatly
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Overview
+
+The apply family applies a function to many pieces of data without writing a loop. The functions differ in **what they take in** and **what they return**.
+
+| Function | Works on | Returns |
+|---|---|---|
+| `apply()` | Rows or columns of a matrix | Vector or matrix |
+| `lapply()` | Each element of a list or vector | List |
+| `sapply()` | Each element, result simplified | Vector or matrix |
+| `vapply()` | Each element, output type declared | Vector (safest) |
+| `mapply()` | Several inputs in parallel | Vector or list |
+| `tapply()` | A vector split by groups | One value per group |
+
+All demos use built-in datasets.
+
+# `apply()`: Rows or Columns of a Matrix
+
+`apply(X, MARGIN, FUN)`, where `MARGIN = 1` means rows and `MARGIN = 2` means columns.
+
+```{r apply-basic}
+m <- matrix(1:6, nrow = 2)
+m
+
+apply(m, 1, sum)       # row sums: 9 12
+apply(m, 2, mean)      # column means: 1.5 3.5 5.5
+```
+
+Extra arguments are passed on to the function:
+
+```{r apply-extra}
+head(airquality)
+
+apply(airquality[, 1:4], 2, mean, na.rm = TRUE)    # column means, ignoring NAs
+```
+
+Without `na.rm = TRUE`, the columns that contain `NA` would return `NA`.
+
+# `lapply()`: Always Returns a List
+
+```{r lapply}
+scores <- list(a = 1:3, b = 4:6)
+
+lapply(scores, mean)
+```
+
+# `sapply()`: Simplifies the Result
+
+`sapply()` does the same as `lapply()`, but returns a vector or matrix when it can.
+
+```{r sapply-vector}
+sapply(scores, mean)
+sapply(iris[, 1:4], mean)       # one mean per numeric column
+```
+
+```{r sapply-matrix}
+sapply(iris[, 1:4], range)      # two values per column, so the result is a matrix
+```
+
+# `vapply()`: `sapply()` with a Safety Check
+
+`vapply()` requires you to declare the type and length of each result. It fails with a clear error if the function returns something else, so it is safer inside your own functions.
+
+```{r vapply}
+vapply(iris[, 1:4], mean, numeric(1))      # numeric(1): one number per column
+```
+
+# `mapply()`: Several Inputs in Parallel
+
+`mapply()` takes the first element of each input, then the second, and so on.
+
+```{r mapply}
+mapply(function(x, y) x + y, 1:3, 4:6)     # 1+4, 2+5, 3+6
+
+mapply(rep, 1:3, 3:1)                      # rep(1, 3), rep(2, 2), rep(3, 1)
+```
+
+# `tapply()`: Apply by Group
+
+`tapply(X, INDEX, FUN)` splits a vector by a grouping variable and applies the function to each group.
+
+```{r tapply}
+tapply(mtcars$mpg, mtcars$cyl, mean)       # mean mpg for each cylinder group
+```
+
+`aggregate()` does the same job with a formula and returns a data frame:
+
+```{r aggregate}
+aggregate(mpg ~ cyl, data = mtcars, FUN = mean)
+```
+
+**Interpretation:** cars with 4 cylinders have the highest average mileage, and cars with 8 cylinders the lowest.
+
+# Anonymous Functions
+
+A function can be written inline, without a name.
+
+```{r anonymous}
+sapply(1:5, function(i) i^2)
+
+sapply(1:5, \(i) i^2)             # shorthand, R 4.1 and later
+```
+
+# The Tidyverse Equivalent
+
+The `purrr` package has type-safe versions: `map()` (like `lapply`), `map_dbl()` (like `vapply` with a number), `map_chr()`, and so on.
+
+```{r purrr}
+if (requireNamespace("purrr", quietly = TRUE)) {
+  purrr::map_dbl(iris[, 1:4], mean)
+}
+```
+
+# A Caution: `apply()` on a Data Frame
+
+`apply()` first converts a data frame to a matrix. If the columns have mixed types, everything becomes text.
+
+```{r apply-caution}
+apply(head(iris, 3), 2, class)       # every column becomes "character"
+
+sapply(head(iris, 3), class)         # sapply keeps each column's own type
+```
+
+For data frames, use `sapply()` (over columns) or `dplyr::across()`. Reserve `apply()` for matrices and all-numeric data.
+
+# Key Points
+
+- Choose the function by the **input** (matrix, list, groups, several inputs) and the **output** you want.
+- `sapply()` is convenient but can return different shapes. `vapply()` is predictable.
+- Extra arguments such as `na.rm = TRUE` are passed after the function name.
+- These functions replace most simple `for` loops with shorter, clearer code.
+
+# Reproducibility
+
+```{r session-info}
+sessionInfo()
+```

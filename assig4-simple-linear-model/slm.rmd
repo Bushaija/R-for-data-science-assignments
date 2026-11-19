@@ -1,0 +1,200 @@
+---
+title: "Demo 4: Linear Regression in R"
+author: "Your Name"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: flatly
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  fig.width = 6.5, fig.height = 4, fig.align = "center"
+)
+
+library(ggplot2)
+library(knitr)
+
+theme_set(theme_minimal(base_size = 12))
+```
+
+# Overview
+
+Linear regression models a numeric outcome as a straight-line function of one or more predictors. With one predictor:
+
+$$y = \beta_0 + \beta_1 x + \varepsilon$$
+
+- $\beta_0$ is the **intercept** and $\beta_1$ is the **slope**.
+- $\varepsilon$ is the random error.
+
+In R, the model is fitted with `lm(y ~ x, data = ...)`. This demo uses the built-in `mtcars` dataset to model fuel efficiency (`mpg`).
+
+```{r data}
+head(mtcars[, c("mpg", "wt", "hp", "cyl")])
+```
+
+# Simple Linear Regression
+
+## Fit the model
+
+```{r fit}
+fit <- lm(mpg ~ wt, data = mtcars)
+
+summary(fit)
+```
+
+```{r coefficients}
+ci <- confint(fit)
+
+kable(data.frame(
+  Term     = c("Intercept", "wt (slope)"),
+  Estimate = round(unname(coef(fit)), 3),
+  Lower_95 = round(unname(ci[, 1]), 3),
+  Upper_95 = round(unname(ci[, 2]), 3)),
+  caption = "Coefficients with 95% confidence intervals")
+```
+
+## Interpretation
+
+- **Slope:** for each extra 1000 lb of weight, fuel efficiency changes by about `r round(coef(fit)[2], 2)` miles per gallon on average. The slope is negative, so heavier cars use more fuel.
+- **Intercept:** the predicted mpg at a weight of 0 is `r round(coef(fit)[1], 1)`. This is outside the range of real cars, so it is a mathematical anchor and not a meaningful prediction.
+- **Significance:** the p-value for the slope tests whether the true slope is zero. Here it is `r format.pval(summary(fit)$coefficients[2, 4], digits = 2, eps = 0.001)`, strong evidence of a relationship.
+- **R-squared:** weight explains about `r round(summary(fit)$r.squared * 100)`% of the variation in mpg.
+
+## Plot the fitted line
+
+```{r plot-fit}
+ggplot(mtcars, aes(wt, mpg)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "lm") +
+  labs(title = "Fuel Efficiency vs Weight",
+       subtitle = "Fitted line with 95% confidence band",
+       x = "Weight (1000 lbs)", y = "Miles per gallon")
+```
+
+## Predict for new values
+
+```{r predict}
+new_cars <- data.frame(wt = c(2, 3, 4))
+pred     <- predict(fit, newdata = new_cars, interval = "prediction")
+
+kable(cbind(new_cars, round(pred, 2)),
+      caption = "Predicted mpg with 95% prediction intervals")
+```
+
+The prediction interval (for a single new car) is wider than the confidence band (for the average car), because it includes the noise of an individual observation. Predictions should stay within the observed weights (about 1.5 to 5.4), since the model is not supported outside that range.
+
+## Fit measures
+
+```{r fit-measures}
+res <- residuals(fit)
+
+kable(data.frame(
+  Measure = c("R-squared", "Adjusted R-squared", "Residual standard error", "RMSE", "MAE"),
+  Value   = round(c(summary(fit)$r.squared, summary(fit)$adj.r.squared,
+                    summary(fit)$sigma, sqrt(mean(res^2)), mean(abs(res))), 3)),
+  caption = "Goodness of fit")
+```
+
+RMSE and MAE are in the units of the outcome (miles per gallon), so they describe the typical prediction error directly.
+
+# Checking the Assumptions
+
+Linear regression assumes a linear relationship, independent errors, constant variance, and approximately normal residuals. The four diagnostic plots check these.
+
+```{r diagnostics, fig.height=7}
+par(mfrow = c(2, 2))
+plot(fit)
+par(mfrow = c(1, 1))
+```
+
+| Plot | Checks | Good sign |
+|---|---|---|
+| Residuals vs Fitted | Linearity | Random scatter around zero, flat line |
+| Normal Q-Q | Normal residuals | Points follow the diagonal |
+| Scale-Location | Constant variance | Flat line, even spread |
+| Residuals vs Leverage | Influential points | No points beyond the Cook's distance lines |
+
+With only 32 cars, small departures are expected. Look for clear patterns, and for labelled points that stand far from the rest.
+
+# Multiple Regression
+
+Adding a second predictor, horsepower (`hp`):
+
+```{r fit-multiple}
+fit2 <- lm(mpg ~ wt + hp, data = mtcars)
+
+summary(fit2)
+```
+
+Each coefficient is the effect of that predictor **holding the other fixed**. The weight coefficient changes from the simple model, because weight and horsepower are related. The `hp` coefficient looks small only because horsepower is measured in the hundreds, so one unit is a tiny change.
+
+# A Categorical Predictor
+
+R creates dummy variables automatically when a predictor is a factor.
+
+```{r fit-categorical}
+fit3 <- lm(mpg ~ wt + factor(cyl), data = mtcars)
+
+summary(fit3)
+```
+
+The first group (4 cylinders) is the baseline. The `factor(cyl)6` and `factor(cyl)8` coefficients are the average differences in mpg from 4-cylinder cars, at the same weight.
+
+# Comparing Models
+
+```{r compare}
+anova(fit, fit2)          # does adding hp improve the fit?
+
+kable(data.frame(
+  Model = c("mpg ~ wt", "mpg ~ wt + hp", "mpg ~ wt + factor(cyl)"),
+  AIC   = round(c(AIC(fit), AIC(fit2), AIC(fit3)), 1),
+  BIC   = round(c(BIC(fit), BIC(fit2), BIC(fit3)), 1)),
+  caption = "Information criteria (lower is better)")
+```
+
+- `anova()` tests whether the larger model fits significantly better than the smaller one.
+- AIC and BIC reward fit but penalise extra predictors, so a lower value means a better balance.
+- R-squared always rises when predictors are added, so do not use it alone to compare models.
+
+# Does `lm()` Recover the Truth? A Simulation Check
+
+With simulated data, the true relationship is known, so we can check the model against it.
+
+```{r simulation}
+set.seed(123)
+
+x <- runif(100, min = 0, max = 10)
+y <- 5 + 2 * x + rnorm(100, mean = 0, sd = 3)     # true intercept 5, true slope 2
+
+sim_fit <- lm(y ~ x)
+sim_ci  <- confint(sim_fit)
+
+kable(data.frame(
+  Term     = c("Intercept", "Slope"),
+  True     = c(5, 2),
+  Estimate = round(unname(coef(sim_fit)), 3),
+  Lower_95 = round(unname(sim_ci[, 1]), 3),
+  Upper_95 = round(unname(sim_ci[, 2]), 3)),
+  caption = "True values versus estimates")
+```
+
+The estimates are close to the true values, and the 95% intervals should contain them.
+
+# Key Points
+
+- `lm(y ~ x, data)` fits the model, and `summary()` shows coefficients, p-values, and R-squared.
+- The slope is the average change in `y` per one-unit increase in `x`.
+- Judge a model by more than its p-value: look at R-squared, prediction error, and the diagnostic plots.
+- Regression shows association, not causation, and predictions outside the observed range are unreliable.
+
+# Reproducibility
+
+```{r session-info}
+sessionInfo()
+```
